@@ -170,40 +170,43 @@ client.on(Events.InteractionCreate, (interaction) => {
               if (Date.now() - (1000*60*60*3) > qId.start) timedOut.push(qId.id);
             }
             interaction.guild.members.fetch({user: ids, withPresences: true}).then((members) => {
-              for(var m of members){
-                if(m[1].presence == null || m[1].presence.status == 'offline' || timedOut.includes(m[1].user.id)){
-                  if(m[1].presence == null) console.log(m[1]);
-                  if(playerList == m[1].displayName){
-                    playerList = "No one";
-                    queueIds = [];
-                  }else{
-                    var oldNames = playerList.split(", ");
-                    var newNames = [];
-                    for(var n of oldNames){
-                      if (n != m[1].displayName) newNames.push(n);
-                    }
-                    playerList = newNames.join(", ");
-                    queueIds = queueIds.filter(i => i.id != m[1].user.id);
-                  }
+              // Build a map of current members (found on the guild)
+              const foundIds = [];
+              for (const [id, memberObj] of members) foundIds.push(id);
+
+              // Remove any queueIds that aren't on the guild
+              queueIds = queueIds.filter(q => foundIds.includes(q.id));
+
+              // Remove timed-out entries
+              const now = Date.now();
+              queueIds = queueIds.filter(q => now - (1000*60*60*3) <= q.start);
+
+              // Rebuild the playerList from the remaining IDs using current displayName
+              let playerList = "No one";
+              if (queueIds.length > 0) {
+                const displayNames = [];
+                for (const q of queueIds) {
+                  const m = members.get(q.id);
+                  if (m) displayNames.push(m.displayName);
                 }
+                playerList = displayNames.length ? displayNames.join(", ") : "No one";
               }
-              if (queueIds.length >= 6){
+
+              // If full party, pop queue as before
+              if (queueIds.length >= 6) {
                 client.guilds.fetch(config.guild_id).then((g) => {
                   g.channels.fetch(config.queue_chat_channel).then((c) => {
-                    var mentions = "";
-                    for(var i of queueIds){
-                      mentions+=`<@${i.id}> `;
-                    }
+                    const mentions = queueIds.map(i => `<@${i.id}> `).join("");
                     c.send({content: `${mentions}Your battle party awaits! There are enough players to queue for a 3v3!`}).then(() => {
                       playerList = '[QUEUE POPPED] No one';
                       queueIds = [];
-                      var newEmbed = new EmbedBuilder().setTitle(currentEmbed.title).setDescription(currentEmbed.description).addFields({name: "In Queue", value: playerList});
+                      const newEmbed = new EmbedBuilder().setTitle(currentEmbed.title).setDescription(currentEmbed.description).addFields({name: "In Queue", value: playerList});
                       interaction.editReply({embeds: [newEmbed], components: interaction.message.components});
                     }).catch(console.error);
                   }).catch(console.error);
                 }).catch(console.error);
-              }else{
-                var newEmbed = new EmbedBuilder().setTitle(currentEmbed.title).setDescription(currentEmbed.description).addFields({name: "In Queue", value: playerList});
+              } else {
+                const newEmbed = new EmbedBuilder().setTitle(currentEmbed.title).setDescription(currentEmbed.description).addFields({name: "In Queue", value: playerList});
                 interaction.editReply({embeds: [newEmbed], components: interaction.message.components});
               }
             }).catch(console.error);
